@@ -59,25 +59,30 @@
   function fromLobby(L, deck, rnd) {   // geçersizse Error fırlatır (mesajı oyuncuya gösterilir)
     const teams = L.teams.map((t, i) => ({ ...t, players: L.players.filter(p => p.team === i).map(({ id, name }) => ({ id, name })) }));
     if (teams.some(t => t.players.length < 2)) throw new Error('Her takımda en az 2 oyuncu olmalı');
-    if (!deck || deck.length < 3) throw new Error('Kelimeler henüz yüklenmedi');
+    if (!deck || deck.filter(c => c.t.length >= 3).length < 3) throw new Error('Kelimeler henüz yüklenmedi');
     return newGame({ teams, modes: L.modes, deck }, rnd);
   }
 
   // ---------- oyun ----------
   function newGame({ teams, modes, deck }, rnd = Math.random) {
-    const board = [];   // seçilen modlar her turda karışık sırayla tekrar eder; seçilmeyen mod haritaya hiç girmez
+    // ilk 3 kare ısınma için hep Anlat (seçildiyse); sonra seçilen modlar karışık sırayla tekrar eder, seçilmeyen hiç girmez
+    const board = modes.includes('anlat') ? ['anlat', 'anlat', 'anlat'] : [];
     while (board.length < N) board.push(...shuffle([...modes], rnd));
     board.length = N;
+    const somut = deck.filter(c => c.s);
     return {
       id: (Date.now() + Math.random()).toString(36),
       teams: teams.map(t => ({ name: t.name, color: t.color, players: t.players, pos: 0, next: 0 })),
-      board, deck: shuffle([...deck], rnd), di: 0, turn: 0, phase: 'ready', cur: null, last: null, winner: -1,
+      board, turn: 0, phase: 'ready', cur: null, last: null, winner: -1,
+      deck: shuffle(deck.filter(c => c.t.length >= 3), rnd), di: 0,
+      deck2: somut.length >= 30 ? shuffle(somut, rnd) : null, di2: 0,   // Çiz ve Pandomim: çizilebilen, canlandırılabilen kelimeler
     };
   }
 
-  function draw(G, k) {   // deste biterse kullanılmış kartlar karılıp baştan dağıtılır
-    if (G.di + k > G.deck.length) { shuffle(G.deck); G.di = 0; }
-    return G.deck.slice(G.di, G.di += k);
+  function draw(G, mode) {   // deste biterse kullanılmış kartlar karılıp baştan dağıtılır
+    const k = MODES[mode].opts, two = (mode === 'ciz' || mode === 'mime') && G.deck2, d = two ? 'deck2' : 'deck', i = two ? 'di2' : 'di';
+    if (G[i] + k > G[d].length) { shuffle(G[d]); G[i] = 0; }
+    return G[d].slice(G[i], G[i] += k);
   }
 
   function role(G, who) {
@@ -97,7 +102,7 @@
     G.phase = 'ready';
     G.turn = (G.turn + 1) % G.teams.length;
   }
-  const endTurn = G => { if (G.cur.mode === 'ciz') G.phase = 'score'; else finish(G); };   // çizimde puan süre bitince sorulur
+  const endTurn = G => { if (G.cur.mode === 'ciz') G.phase = 'score'; else finish(G); };   // çizimde sonuç süre bitince onaylanır (ceza eklenir)
 
   function act(G, m, now, who) {
     const T = G.teams[G.turn], c = G.cur, r = role(G, who);
@@ -108,7 +113,7 @@
         if (G.phase !== 'ready') return 'Tur şu an başlatılamaz';
         if (!boss) return 'Turu anlatan başlatır';
         const mode = G.board[T.pos];
-        G.cur = { mode, endsAt: now + BASE * MODES[mode].mult * 1000, ok: 0, pass: 0, tabu: 0, words: 0, n: 0, card: draw(G, MODES[mode].opts) };
+        G.cur = { mode, endsAt: now + BASE * MODES[mode].mult * 1000, ok: 0, pass: 0, tabu: 0, words: 0, n: 0, card: draw(G, mode) };
         G.phase = 'play';
         return;
       }
@@ -127,17 +132,19 @@
     }
     if (G.phase !== 'play') return 'Tur oynanmıyor';
     const ciz = c.mode === 'ciz', limit = c.mode === 'limit';
-    const card = () => { c.card = draw(G, MODES[c.mode].opts); c.n++; };
+    const card = () => { c.card = draw(G, c.mode); c.n++; };
     switch (m.a) {
       case 'ok':
-        if (!lead || ciz) return 'Doğruya anlatan basar';
+        if (!lead) return 'Doğruya anlatan basar';
         c.ok++; card();
         return;
       case 'pass':
-        if (!lead || ciz) return 'Pasa anlatan basar';
+        if (!lead) return 'Pasa anlatan basar';
         if (limit) {   // 15 Kelime: pas sınırsız ama her pas bir kelime hakkı yer
           c.pass++; c.words++;
           if (c.words >= WORDS) return endTurn(G);
+        } else if (ciz) {
+          c.pass++;    // Çiz: pas sınırsız
         } else {
           if (c.pass >= PASSES) return 'Pas hakkın bitti';
           c.pass++;
@@ -152,10 +159,6 @@
         if (!limit || r === 'mate') return 'Kelimeleri rakip takım sayar';
         c.words++;
         if (c.words >= WORDS) return endTurn(G);
-        return;
-      case 'next':
-        if (!lead || !ciz) return 'Kartı çizen değiştirir';
-        card();
         return;
     }
     return 'Bilinmeyen hamle';

@@ -5,6 +5,7 @@ const http = require('http'), https = require('https'), fs = require('fs'), path
 const Game = require('./public/game');
 const Words = require('./public/words');
 const YEDEK = require('./public/yedek');
+const SOMUT = require('./public/somut');
 
 const PORT = +process.argv[2] || +process.env.PORT || 3030;
 const PUB = path.join(__dirname, 'public');
@@ -14,16 +15,17 @@ const FILES = {                                         // sunulan dosyaların t
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/style.css': ['style.css', 'text/css; charset=utf-8'],
   '/client.js': ['client.js', JS], '/board.js': ['board.js', JS], '/sound.js': ['sound.js', JS],
-  '/game.js': ['game.js', JS], '/words.js': ['words.js', JS], '/yedek.js': ['yedek.js', JS],
+  '/game.js': ['game.js', JS], '/words.js': ['words.js', JS], '/yedek.js': ['yedek.js', JS], '/somut.js': ['somut.js', JS],
+  '/vendor/three.module.min.js': ['vendor/three.module.min.js', JS],
 };
 const TOKEN = /^[a-f0-9]{32}$/;                         // oyuncunun tarayıcısının uydurduğu gizli kimlik
 const IDLE = 30 * 60e3;                                 // kimsenin bağlı olmadığı oda bu kadar sonra kapanır
 const ABC = 'ABCDEFGHJKLMNPRSTUVYZ23456789';            // oda kodu harfleri; birbirine benzeyenler yok
 const LOBBY = ['team+', 'team-', 'assign', 'modes', 'rm'];
 
-let WORDS = YEDEK, WORDS_JSON = JSON.stringify(WORDS);
+let WORDS = Words.merge([YEDEK, SOMUT]);
 try { const c = JSON.parse(fs.readFileSync(CACHE, 'utf8')); if (Array.isArray(c) && c.length > WORDS.length) WORDS = c; } catch (e) { /* kayıt yok: yedek liste */ }
-WORDS_JSON = JSON.stringify(WORDS);
+let WORDS_JSON = JSON.stringify(WORDS);
 
 // shortcut: odalar yalnızca bellekte; sunucu kapanınca gider. Yeniden başlatmaya dayanması gerekirse dosyaya yaz.
 const rooms = new Map();                                // id -> { id, L, G, host: token, pid: Map(token -> oyuncu id), timer, seen }
@@ -192,21 +194,22 @@ setInterval(() => {
   gone.clear();                                         // kapanan odalarda bağlı kimse yoktu
 }, 15000);
 
-// Node 16'da fetch yok: Words.load'a aynı biçimde (ok, json()) yanıt veren küçük bir https.get
+// Node 16'da fetch yok: Words.load'a aynı biçimde (ok, text()) yanıt veren küçük bir https.get
 const get = url => new Promise((resolve, reject) => {
   https.get(url, { timeout: 10000 }, res => {
     let b = '';
     res.setEncoding('utf8');
     res.on('data', d => { b += d; });
-    res.on('end', () => resolve({ ok: res.statusCode === 200, status: res.statusCode, json: async () => JSON.parse(b) }));
+    res.on('end', () => resolve({ ok: res.statusCode === 200, status: res.statusCode, text: async () => b }));
   }).on('error', reject).on('timeout', function () { this.destroy(new Error('zaman aşımı')); });
 });
-Words.load(get).then(list => {
+Words.load(get).then(got => {
+  const list = got.length ? Words.merge([got, SOMUT]) : [];
   if (list.length >= WORDS.length) {
     WORDS = list; WORDS_JSON = JSON.stringify(list);
     fs.writeFile(CACHE, WORDS_JSON, e => e && console.error('kelimeler.json yazılamadı:', e.message));
   }
-  console.log(`Kelimeler: ${WORDS.length} kart${list.length ? ' (internetten)' : ' (internet yok; kayıtlı/yedek liste)'}`);
+  console.log(`Kelimeler: ${WORDS.length} kart, ${WORDS.filter(c => c.s).length} tanesi Çiz/Pandomim için${got.length ? ' (internetten)' : ' (internet yok; kayıtlı/yedek liste)'}`);
 });
 
 server.on('error', e => { console.error(e.code === 'EADDRINUSE' ? `${PORT} portu kullanımda. Başka bir portla dene: node server.js 3001` : e); process.exit(1); });

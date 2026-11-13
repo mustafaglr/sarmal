@@ -31,6 +31,12 @@ test('kelimeler: aynı kelime bir kez, en çok 5 yasaklı, 3ten az yasaklı kart
   assert.ok(YEDEK.length > 400 && YEDEK.every(c => c.w && c.t.length >= 3));
 });
 
+test('kelimeler: somut işareti birleşir, düz kelimeler yalnızca somut havuza girer', () => {
+  const out = Words.merge([[['Kedi', ['Miyav', 'Pati', 'Tüy']]], [['KEDİ', ['a', 'b', 'c'], true]], ['Diş fırçalamak']]);
+  assert.deepEqual(out, [{ w: 'Kedi', t: ['Miyav', 'Pati', 'Tüy'], s: 1 }, { w: 'Diş fırçalamak', t: [], s: 1 }]);
+  assert.ok(require('./public/somut').length > 150);
+});
+
 test('lobi: takımda 2 kişiden az varsa oyun başlamaz; takım silinince oyuncular havuza döner', () => {
   const L = lobby(3, 2);
   L.players[0].team = -1;
@@ -77,17 +83,37 @@ test('15 kelime: 120 sn, pas bir kelime yer, 15. kelimede tur biter', () => {
   assert.equal(G.teams[0].pos, 1);
 });
 
-test('çiz: tur içinde puan yok, süre bitince doğru ve ceza girilir', () => {
+test('çiz: doğru sayılır, pas sınırsız, tabu yok; süre bitince sonuç onaylanır ve ceza eklenir', () => {
   const G = mk();
   start(G, 'ciz', 0);
-  no(G, { a: 'ok' }); no(G, { a: 'tabu' }); no(G, { a: 'pass' });
-  ok(G, { a: 'next' });
+  no(G, { a: 'tabu' });
+  ok(G, { a: 'ok' }); ok(G, { a: 'ok' });
+  for (let i = 0; i < 6; i++) ok(G, { a: 'pass' });
   ok(G, { a: 'timeup' }, 60000);
   assert.equal(G.phase, 'score');
+  assert.equal(Game.view(G, null).cur.ok, 2);   // ekrana dolu gelir
   no(G, { a: 'score', ok: -1, ceza: 0 });
   ok(G, { a: 'score', ok: 4, ceza: 1 });
   assert.equal(G.teams[0].pos, 3);
   assert.equal(G.phase, 'ready');
+});
+
+test('ilk 3 kare Anlat, sonrası karışık; Anlat seçilmediyse hiç yok', () => {
+  const G = mk(2, 2, ['anlat', 'ciz', 'mime']);
+  assert.deepEqual(G.board.slice(0, 3), ['anlat', 'anlat', 'anlat']);
+  assert.ok(G.board.slice(3).includes('ciz'));
+  const H = mk(2, 2, ['ciz', 'mime']);
+  assert.ok(!H.board.includes('anlat'));
+});
+
+test('çiz ve pandomim somut kelimelerden, anlat ve 15 kelime yasaklılı kartlardan seçer', () => {
+  const somut = Array.from({ length: 40 }, (_, i) => ({ w: 'S' + i, t: [], s: 1 }));
+  const G = Game.fromLobby(lobby(), [...deck, ...somut]);
+  start(G, 'mime');
+  assert.ok(G.cur.card.every(c => c.s));
+  ok(G, { a: 'timeup' }, 60000);
+  start(G, 'limit');
+  assert.ok(G.cur.card.every(c => c.t.length >= 3));
 });
 
 test('piyon başlangıcın gerisine düşmez; merkeze varan kazanır', () => {
