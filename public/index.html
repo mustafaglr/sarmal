@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15112b">
+<title>Sarmal</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <span class="brand">🌀 Sarmal</span>
+  <div class="tools">
+    <button type="button" id="mute" class="icon" aria-label="Sesi aç/kapat">🔊</button>
+    <button type="button" id="helpbtn" class="icon" aria-label="Nasıl oynanır?">?</button>
+    <button type="button" id="quit" class="icon" aria-label="Çık" hidden>✕</button>
+  </div>
+</header>
+<main id="app"></main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="help" aria-labelledby="help-title">
+  <div class="in">
+    <h2 id="help-title">Nasıl oynanır?</h2>
+    <p>Takımlar sırayla oynar. Bir kişi anlatır, takım arkadaşları tahmin eder. Süre bitince takımın piyonu kazandığı puan kadar sarmalda ilerler. <b>Merkezdeki 🏁 karesine ilk varan takım kazanır.</b></p>
+
+    <h3>Kurulum</h3>
+    <ul>
+      <li><b>Tek telefon:</b> İsimleri gir, takımlara sürükle, modları seç. Sıra kimdeyse telefon ondadır; rakip takımdan biri ekrana göz kulak olur.</li>
+      <li><b>Herkes kendi telefonundan:</b> Bilgisayarda <code>node server.js</code> çalıştırılır. Herkes aynı Wi-Fi'de ekrandaki adrese girer. Biri oda kurar, diğerleri oda koduyla katılır. Kurucu oyuncuları takımlara sürükler, modları seçer ve başlatır.</li>
+      <li>En az 2 takım, her takımda en az 2 kişi gerekir. Anlatan kişi takım içinde sırayla değişir.</li>
+    </ul>
+
+    <h3>Harita ve modlar</h3>
+    <p>Piyonun durduğu karenin rengi o tur hangi modun oynanacağını gösterir. Oyun başında seçilmeyen modlar haritaya hiç girmez.</p>
+    <ul>
+      <li>💬 <b>Anlat (60 sn):</b> Kelimeyi, kartta yazan yasaklı kelimeleri söylemeden anlat. Turda 3 pas hakkı var.</li>
+      <li>✏️ <b>Çiz (60 sn):</b> Kartta 3 seçenek var, birini kağıda çiz. Harf, rakam, sembol çizmek ve konuşmak yasak. Bilinince "Sonraki kart"a bas. Süre bitince kaç doğru ve kaç ceza olduğu girilir.</li>
+      <li>🔢 <b>15 Kelime (120 sn):</b> Kartta 3 seçenek var, birini anlat. Bütün tur boyunca toplam 15 kelime hakkın var; rakip söylediğin her kelimeyi sayar. Pas sınırsız ama her pas 1 kelime yer. 15 kelime bitince tur biter.</li>
+      <li>🕺 <b>Pandomim (60 sn):</b> Kartta 3 seçenek var, birini konuşmadan ve ses çıkarmadan, sadece vücudunla anlat. Turda 3 pas hakkı var.</li>
+    </ul>
+
+    <h3>Puanlar</h3>
+    <ul>
+      <li><b>Doğru</b> +1, <b>Pas</b> 0, <b>Tabu</b> −1.</li>
+      <li>Tur sonunda piyon (doğru − tabu) kadar ilerler; sonuç eksiyse geri gider.</li>
+      <li><b>Tabu sayılanlar:</b> yasaklı kelimeyi ya da anlatılan kelimeyi (bir parçasını bile) söylemek, yabancı dildeki karşılığını söylemek, "şununla kafiyeli" demek, harf harf ipucu vermek. Pandomimde konuşmak ya da ses çıkarmak.</li>
+    </ul>
+
+    <h3>Kim neye basar?</h3>
+    <ul>
+      <li><b>Anlatan:</b> Doğru, Pas, Tabu. Çiz modunda yalnızca "Sonraki kart".</li>
+      <li><b>Rakip takım:</b> Kartı görür. Kural çiğnenirse TABU'ya, 15 Kelime modunda her kelimede "+1 kelime"ye basar.</li>
+      <li><b>Anlatanın takımı:</b> Kartı görmez, yüksek sesle tahmin eder.</li>
+    </ul>
+
+    <h3>Ses</h3>
+    <p>Tur boyunca ses yok. Son 5 saniyede tik-tak, süre bitince düdük çalar. Üstteki 🔊 düğmesiyle kapatılır.</p>
+    <p class="small muted">Kelimeler internetteki açık Türkçe tabu listelerinden (GitHub) çekilir; internet yoksa oyunun içindeki yedek liste kullanılır.</p>
+  </div>
+  <form method="dialog"><button class="btn primary">Anladım</button></form>
+</dialog>
+
+<script src="yedek.js"></script>
+<script src="words.js"></script>
+<script src="game.js"></script>
+<script src="sound.js"></script>
+<script src="board.js"></script>
+<script src="client.js"></script>
+</body>
+</html>
