@@ -3,6 +3,9 @@
 Telefonda oynanan, Tabu tarzı parti oyunu: Anlat, Çiz, 15 Kelime, Pandomim. İçe doğru sarmal bir harita, her takımın bir piyonu.
 Kurallar oyunun içinde, "Nasıl oynanır?" düğmesinde.
 
+**Hemen dene (tek telefon modu):** https://mustafaglr.github.io/sarmal/
+Herkesin kendi telefonundan girdiği mod için aşağıdaki gibi sunucuyu bilgisayarda çalıştırmak gerekir.
+
 ## Çalıştırma
 
 ```bash
@@ -19,6 +22,14 @@ Biri oda kurar, diğerleri oda koduyla ya da lobide görünen bağlantıyla kat�
 - **Tek telefon:** Aynı adresten "Tek telefon" seçilir. Sunucu olmadan da çalışır: `public/index.html` dosyası tarayıcıda açılırsa yalnızca bu mod görünür.
 - **Kelimeler:** Sunucu açılırken internetteki 4 açık Türkçe tabu listesini çeker (yaklaşık 2.770 kart) ve `kelimeler.json` dosyasına kaydeder. Sonraki açılışlarda internet olmasa da bu kayıt kullanılır. Hiçbiri yoksa `public/yedek.js` içindeki 499 kartlık yedek liste (MIT) devreye girer.
 - **İnternetten oynamak:** Arkadaşlar aynı Wi-Fi'de değilse bir tünel açılır, ör. `ngrok http 3030`.
+
+## Yayındaki linki güncellemek
+
+`public` klasörü `gh-pages` dalından yayınlanır. Değişiklikten sonra:
+
+```bash
+git subtree split --prefix public -b gh-pages && git push origin gh-pages
+```
 
 ## Test
 
