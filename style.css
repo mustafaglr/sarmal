@@ -118,7 +118,10 @@ input:focus-visible, button:focus-visible, .chip:focus-visible { outline: 3px so
 .thead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .tname { font-weight: 900; display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thead .mchip { font-size: 14px; padding: 5px 12px; }
-.clock { text-align: center; }
+.clock { text-align: center; position: relative; }
+.endturn { position: absolute; right: 0; top: 4px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, .07); color: var(--muted); font-weight: 800; font-size: 14px; }
+.endturn.hot { background: var(--accent); color: #2a1a00; border-color: transparent; animation: throb 1.2s ease-in-out infinite; }   /* 15 kelime bitti: sıradaki adım bu */
+.abnum b.done { font-size: 40px; color: var(--accent); }
 .timer { font-size: 68px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
 .timer.hot { color: #f87171; animation: throb 1s ease-in-out infinite; }
 @keyframes throb { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
@@ -196,6 +199,6 @@ span.mi { width: auto; height: auto; font-size: 22px; }
 .mutebox { display: flex; align-items: center; gap: 10px; margin: 6px 0 4px; font-weight: 700; }
 
 @media (prefers-reduced-motion: reduce) {
-  .timer.hot, .win .trophy { animation: none; }
+  .timer.hot, .win .trophy, .endturn.hot { animation: none; }
   .bd { transition: none; }
 }

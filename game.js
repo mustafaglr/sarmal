@@ -141,8 +141,8 @@
       case 'pass':
         if (!lead) return 'Pasa anlatan basar';
         if (limit) {   // 15 Kelime: pas sınırsız ama her pas bir kelime hakkı yer
+          if (c.words >= WORDS) return 'Kelime hakkı bitti';
           c.pass++; c.words++;
-          if (c.words >= WORDS) return endTurn(G);
         } else if (ciz) {
           c.pass++;    // Çiz: pas sınırsız
         } else {
@@ -155,11 +155,14 @@
         if (ciz || r === 'mate') return 'Tabuya rakip takım basar';
         c.tabu++; card();
         return;
-      case 'word':
+      case 'word':   // 15. kelimeden sonra tur sürer: son ipucundan sonra da bilebilirler, anlatan "Bitir"e basar ya da süre biter
         if (!limit || r === 'mate') return 'Kelimeleri rakip takım sayar';
+        if (c.words >= WORDS) return 'Kelime hakkı bitti';
         c.words++;
-        if (c.words >= WORDS) return endTurn(G);
         return;
+      case 'end':    // anlatan vazgeçti ya da 15 Kelime'de hak bitti: süreyi beklemeden turu bitir
+        if (!boss) return 'Turu anlatan bitirir';
+        return endTurn(G);
     }
     return 'Bilinmeyen hamle';
   }
