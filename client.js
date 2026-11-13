@@ -1,5 +1,6 @@
-// Sarmal — sayfa: ana ekran, lobi (takımlara sürükle), harita, tur ekranı.
+// Sarmal — sayfa: ana ekran, lobi (takımlara sürükle), 3D harita, tur ekranı.
 // Tek telefonda kurallar (game.js) burada çalışır; çok telefonda sunucuda çalışır ve buraya yalnızca görünüm gelir.
+// Bütün adresler göreli: oyun bir alt yoldan (ör. /sarmal/) açıldığında da çalışır.
 (function () {
   'use strict';
   const $ = s => document.querySelector(s);
@@ -19,22 +20,23 @@
   const up = s => String(s).toLocaleUpperCase('tr');
   const M = Game.MODES, secs = k => Game.BASE * M[k].mult;
   const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const ico = (k, cls = 'ic') => { const src = Board.icon(k); return src ? h('img', { class: cls, src, alt: '' }) : h('span', { class: cls }, M[k].icon); };
   const store = {
     get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
     set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* gizli sekme ya da dolu: kaydedilmez */ } },
   };
   const RULE = {
-    anlat: 'Kelimeyi yasaklı kelimeleri söylemeden anlat. Doğru +1, tabu −1, 3 pas hakkı.',
-    ciz: 'Üç seçenekten birini kağıda çiz. Harf, rakam, sembol ve konuşmak yok. Süre bitince kaç doğru olduğunu gir.',
-    limit: 'Üç seçenekten birini anlat. Turda toplam 15 kelime hakkın var; pas sınırsız ama her pas 1 kelime yer.',
-    mime: 'Üç seçenekten birini konuşmadan, sadece vücudunla anlat. Ses çıkarmak tabu. 3 pas hakkı.',
+    anlat: 'Kelimeyi altındaki yasaklı kelimeleri söylemeden anlat. 3 pas hakkın var.',
+    ciz: 'Üç kelimeden birini kağıda çiz. Harf, rakam ve konuşmak yok. Pas sınırsız.',
+    limit: 'Üç kelimeden birini anlat. Bütün tur için 15 kelime hakkın var; pas sınırsız ama her pas bir hak yer.',
+    mime: 'Üç kelimeden birini hiç konuşmadan, hareketlerle anlat. 3 pas hakkın var.',
   };
   const ROLE = {
-    all: () => '📱 Telefonu anlatana verin. Rakip takımdan biri ekrana göz kulak olsun.',
-    describer: () => 'Hazır olunca başla. Kartı sen ve rakip takım göreceksiniz.',
+    all: () => '📱 Telefonu anlatana verin. Karşı takımdan biri ekrana göz kulak olsun.',
+    describer: () => 'Hazır olunca başla. Kartı sen ve karşı takım göreceksiniz.',
     mate: () => 'Tahmin eden sensin! Kartı göremezsin.',
-    rival: V => V.mode === 'limit' ? 'Kartı göreceksin. Anlatanın her kelimesinde "+1 kelime"ye, kural ihlalinde TABU\'ya bas.'
-      : V.mode === 'ciz' ? 'Kartı göreceksin. Harf ya da sembol çizilirse süre sonunda ceza yazılır.'
+    rival: V => V.mode === 'limit' ? 'Kartı göreceksin. Anlatan her kelime söylediğinde "+1 kelime"ye bas.'
+      : V.mode === 'ciz' ? 'Kartı göreceksin. Harf ya da rakam çizilirse süre sonunda ceza yazılır.'
       : 'Kartı göreceksin. Yasaklı kelime söylenirse TABU\'ya bas.',
   };
 
@@ -47,13 +49,34 @@
 
   // ---------- durum ----------
   let ui = store.get('sarmal-ekran') === 'local' ? 'local' : 'home';   // home | local | net
-  let words = YEDEK, server = false, S = null, offset = 0, online = true;
+  let words = Words.merge([YEDEK, SOMUT]), server = false, S = null, offset = 0, online = true;
   let local = store.get('sarmal-yerel');                                // tek telefon: { L: lobi, G: oyun }, her hamleden sonra kaydedilir
   if (!local || !local.L) local = { L: Game.newLobby(), G: null };
   let name = store.get('sarmal-isim') || '';
   let code = (new URLSearchParams(location.search).get('oda') || '').toUpperCase();
   let pick = null, dragEnd = 0, draft = null, lastTick = 0, was = null;
   const board = Board.create();
+
+  // 15 Kelime: boncuklar soldan sağa kayar, ortada kalan hak yazar. Ekranlar arasında aynı öğe kalır ki kayma animasyonu kesilmesin.
+  const abacus = (() => {
+    const rail = h('div', { class: 'abacus' }, h('i', { class: 'rail' })), beads = [], num = h('div', { class: 'abnum', 'aria-live': 'polite' });
+    for (let i = 0; i < Game.WORDS; i++) { const b = h('i', { class: 'bd', style: `--h:${(250 + i * 9) % 360}` }); beads.push(b); rail.append(b); }
+    let key = null;
+    return {
+      el: h('div', { class: 'abwrap' }, num, rail),
+      update(used, k) {
+        const snap = k !== key, left = Game.WORDS - used;
+        key = k;
+        void rail.offsetWidth;   // stiller yerleşsin: değişen konum kayarak gelsin
+        beads.forEach((b, i) => {
+          b.classList.toggle('snap', snap);
+          b.classList.toggle('used', i >= left);
+          b.style.left = i < left ? `calc(${i} * var(--step))` : `calc(100% - ${Game.WORDS - i} * var(--step))`;
+        });
+        num.replaceChildren(h('b', {}, left), h('span', {}, 'kelime hakkı kaldı'));
+      },
+    };
+  })();
 
   function here() {   // ekrandaki oyun: lobi, oyun görünümü, düzenleme yetkisi
     if (ui === 'local') return { L: local.L, V: local.G && Game.view(local.G, null), edit: true, local: true, me: null };
@@ -73,7 +96,7 @@
       const r = await fetch('act', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...m, t: token }) });
       const { err } = await r.json();
       if (err) { say(err); render(); }   // reddedilen dokunuşun bıraktığı izi (ör. kutucuk) geri al
-    } catch (e) { say('Sunucuya ulaşılamadı'); }
+    } catch (e) { say('Bağlantı yok, tekrar dene'); }
   }
   function play(m) {
     let err;
@@ -100,26 +123,27 @@
   // ---------- ekranlar ----------
   function render() {
     const C = here(), V = C && C.V;
-    if (was && V && was.id === V.id && was.phase === 'play' && V.phase !== 'play') sfx('end');   // tur bitti: dııııt
+    if (was && V && was.id === V.id && was.phase === 'play' && V.phase !== 'play') sfx('end');   // tur bitti
     was = V && { id: V.id, phase: V.phase };
     if (!V || V.phase !== 'score') draft = null;
     $('#quit').hidden = !C;
-    $('#mute').textContent = isMuted() ? '🔇' : '🔊';
+    $('#mute').textContent = Sound.muted ? '🔇' : '🔊';
     const kind = !C ? 'home' : !V ? 'lobby' : V.phase === 'play' ? 'turn' : V.phase === 'score' ? 'score' : 'map';
     const screen = { home, lobby, turn, score, map }[kind](C, V);
-    const warn = C && !C.local && !online ? h('p', { class: 'warn' }, 'Sunucuyla bağlantı koptu, yeniden bağlanıyor…') : null;
+    const warn = C && !C.local && !online ? h('p', { class: 'warn' }, 'Bağlantı koptu, yeniden bağlanıyor…') : null;
     $('#app').replaceChildren(...[warn, screen].filter(Boolean));
     if (kind !== render.kind) { scrollTo(0, 0); render.kind = kind; }   // yeni ekran baştan görünsün
     if (V) board.update(V);   // tur sırasında da: sayfa yenilense bile tur sonu ilerlemesi animasyonlu olur
+    if (kind === 'turn' && V.mode === 'limit') abacus.update(V.cur.words, V.id + V.cur.endsAt);
     tick();
   }
 
   function logo() {
-    const pts = Board.points(70).slice(0, -1), d = 'M' + pts.map(p => p.map(v => v.toFixed(1)).join(' ')).join(' L');
+    const pts = Array.from({ length: 241 }, (_, i) => { const th = 6 * Math.PI * i / 240 - Math.PI / 2, r = 176 - 132 * i / 240; return [r * Math.cos(th), r * Math.sin(th)]; });
     const w = h('div', { class: 'logo-art', 'aria-hidden': 'true' });
     w.innerHTML = `<svg viewBox="-200 -200 400 400"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbbf24"/><stop offset=".5" stop-color="#c084fc"/><stop offset="1" stop-color="#38bdf8"/></linearGradient></defs>
-      <path d="${d}" fill="none" stroke="url(#lg)" stroke-width="24" stroke-linecap="round"/>
-      ${[0, 17, 34, 51].map((i, k) => `<circle cx="${pts[i][0]}" cy="${pts[i][1]}" r="20" fill="${['#f59e0b', '#38bdf8', '#c084fc', '#4ade80'][k]}" stroke="#15112b" stroke-width="5"/>`).join('')}</svg>`;
+      <path d="M${pts.map(p => p.map(v => v.toFixed(1)).join(' ')).join(' L')}" fill="none" stroke="url(#lg)" stroke-width="24" stroke-linecap="round"/>
+      ${[0, 60, 120, 180].map((i, k) => `<circle cx="${pts[i][0]}" cy="${pts[i][1]}" r="20" fill="${['#f59e0b', '#38bdf8', '#c084fc', '#4ade80'][k]}" stroke="#15112b" stroke-width="5"/>`).join('')}</svg>`;
     return w;
   }
 
@@ -127,25 +151,25 @@
     const nameIn = h('input', { value: name, maxlength: 16, placeholder: 'İsmin', autocomplete: 'off', 'aria-label': 'İsmin', oninput: e => { name = e.target.value; store.set('sarmal-isim', name); } });
     const codeIn = h('input', { value: code, maxlength: 4, placeholder: 'KOD', class: 'code-in', autocomplete: 'off', autocapitalize: 'characters', 'aria-label': 'Oda kodu', oninput: e => { code = e.target.value.toUpperCase(); } });
     const fresh = () => {
-      if (local.G && !confirm('Yarım kalan tek telefon oyunu silinsin mi?')) return;
+      if (local.G && !confirm('Yarım kalan oyun silinsin mi?')) return;
       local.G = null; store.set('sarmal-yerel', local); go('local');
     };
     return h('section', { class: 'home' },
-      h('div', { class: 'hero' }, logo(), h('h1', {}, 'Sarmal'), h('p', { class: 'tag' }, 'Anlat · Çiz · 15 Kelime · Pandomim')),
+      h('div', { class: 'hero' }, logo(), h('h1', {}, 'Sarmal'), h('p', { class: 'tag' }, Object.keys(M).map(k => h('span', {}, ico(k), M[k].name)))),
       S && S.room ? h('button', { class: 'btn primary', onclick: () => go('net') }, `Odana dön (${S.room})`) : null,
-      local.G ? h('button', { class: 'btn primary', onclick: () => go('local') }, 'Tek telefon oyununa devam et') : null,
+      local.G ? h('button', { class: 'btn primary', onclick: () => go('local') }, 'Oyuna devam et') : null,
       h('div', { class: 'panel' },
-        h('h2', {}, '📱 Tek telefon'),
-        h('p', { class: 'muted' }, 'İsimleri gir, takımlara ayır; telefon elden ele dolaşsın.'),
+        h('h2', {}, '📱 Tek telefonla'),
+        h('p', { class: 'muted' }, 'İsimleri yaz, takımlara ayır; telefon elden ele dolaşsın.'),
         h('button', { class: 'btn' + (local.G ? '' : ' primary'), onclick: fresh }, local.G ? 'Yeni oyun kur' : 'Oyunu kur')),
       h('div', { class: 'panel' },
         h('h2', {}, '📲 Herkes kendi telefonundan'),
         server ? [
-          h('p', { class: 'muted' }, 'Aynı Wi-Fi\'de olun. Biri oda kursun, diğerleri kodla girsin.'),
+          h('p', { class: 'muted' }, 'Biri oda kursun, diğerleri ekrandaki 4 harfli kodla girsin.'),
           nameIn,
           h('button', { class: 'btn', onclick: () => send({ a: 'create', name }) }, 'Oda kur'),
           h('div', { class: 'row' }, codeIn, h('button', { class: 'btn', onclick: () => send({ a: 'join', room: code, name }) }, 'Odaya katıl')),
-        ] : h('p', { class: 'muted' }, 'Bunun için oyunu bilgisayarda açılan sunucudan aç (node server.js). Sunucu yokken yalnızca tek telefonla oynanır.')),
+        ] : h('p', { class: 'muted' }, 'Bu bağlantıda yalnızca tek telefonla oynanır. Herkes kendi telefonundan oynayacaksa, oyunu kuran kişinin paylaştığı bağlantıdan girin.')),
       h('button', { class: 'link', onclick: () => $('#help').showModal() }, 'Nasıl oynanır?'),
       h('p', { class: 'muted small center' }, `${words.length.toLocaleString('tr')} kelime kartı`));
   }
@@ -178,30 +202,30 @@
     let head;
     if (C.local) {
       const addIn = h('input', { id: 'addname', maxlength: 16, placeholder: 'Oyuncu ismi', 'aria-label': 'Oyuncu ismi', autocomplete: 'off', enterkeyhint: 'done' });
-      head = [h('h2', {}, 'Tek telefon'),
+      head = [h('h2', {}, 'Tek telefonla'),
         h('form', { class: 'row add', onsubmit: e => { e.preventDefault(); if (!addIn.value.trim()) return; send({ a: 'add', name: addIn.value }); const i = $('#addname'); if (i) i.focus(); } },
           addIn, h('button', { class: 'btn' }, 'Ekle'))];
     } else {
-      const lan = /^(localhost|127\.|\[::1\])/.test(location.host) && S.urls.length;   // bilgisayarda açıldıysa ağ adresini göster
-      const base = lan ? S.urls[0] : location.origin;
+      const lan = /^(localhost|127\.|\[::1\])/.test(location.hostname) && S.urls.length;   // bilgisayarda açıldıysa ağ adresini göster
+      const base = lan ? S.urls[0] + '/' : location.origin + location.pathname;
       head = h('div', { class: 'roomcode' }, h('span', {}, 'Oda kodu'), h('b', {}, S.room),
-        h('small', {}, 'Diğer telefonlar aynı Wi-Fi\'de bu adrese girsin:'), h('code', {}, `${base}/?oda=${S.room}`),
-        lan && S.urls.length > 1 ? h('details', {}, h('summary', {}, 'Açılmazsa diğer adresler'), S.urls.slice(1).map(u => h('code', {}, `${u}/?oda=${S.room}`))) : null);
+        h('small', {}, 'Diğerleri "Odaya katıl"a bu kodu yazsın ya da şu bağlantıdan girsin:'), h('code', {}, `${base}?oda=${S.room}`),
+        lan && S.urls.length > 1 ? h('details', {}, h('summary', {}, 'Bağlantı açılmazsa'), S.urls.slice(1).map(u => h('code', {}, `${u}/?oda=${S.room}`))) : null);
     }
     return h('section', { class: 'lobby' },
       head,
-      h('p', { class: 'hint' }, edit ? 'Oyuncuları takımlara sürükle ya da oyuncuya dokunup takıma dokun.' : 'Kurucu takımları ayarlıyor…'),
+      h('p', { class: 'hint' }, edit ? 'Oyuncuları parmağınla takımlara sürükle (ya da oyuncuya, sonra takıma dokun).' : 'Odayı kuran kişi takımları ayarlıyor…'),
       zone(-1, 'Takımsız'),
       h('div', { class: 'teams' }, L.teams.map((t, i) => zone(i, t.name, t.color))),
       edit ? h('div', { class: 'row' },
         h('button', { class: 'btn ghost', disabled: L.teams.length <= 2, onclick: () => send({ a: 'team-' }) }, '− Takım'),
         h('button', { class: 'btn ghost', disabled: L.teams.length >= 6, onclick: () => send({ a: 'team+' }) }, '+ Takım')) : null,
-      h('h3', {}, 'Modlar'),
+      h('h3', {}, 'Oyun türleri'),
       h('div', { class: 'modes' }, Object.keys(M).map(k => h('label', { class: 'mopt m-' + k },
         h('input', { type: 'checkbox', checked: L.modes.includes(k), disabled: !edit, onchange: e => send({ a: 'modes', list: e.target.checked ? [...L.modes, k] : L.modes.filter(x => x !== k) }) }),
-        h('span', { class: 'mi' }, M[k].icon), h('span', {}, h('b', {}, M[k].name), h('small', {}, `${secs(k)} sn`))))),
+        ico(k, 'mi'), h('span', {}, h('b', {}, M[k].name), h('small', {}, `${secs(k) / 60} dakika`))))),
       edit ? h('button', { class: 'btn primary big', onclick: () => send({ a: 'begin' }) }, 'Oyunu başlat')
-        : h('p', { class: 'muted center' }, 'Kurucu başlatınca oyun burada açılacak.'));
+        : h('p', { class: 'muted center' }, 'Odayı kuran başlatınca oyun burada açılacak.'));
   }
 
   function drag(e, pid) {   // parmakla sürükle; kımıldamadan bırakılırsa dokunma sayılır (onclick seçer)
@@ -233,9 +257,9 @@
     const T = V.teams[V.turn], boss = C.local || V.role === 'describer' || V.host, last = V.last, LT = last && V.teams[last.team];
     return h('section', { class: 'mapscreen' },
       last ? h('div', { class: 'last', style: `--c:${LT.color}` },
-        h('b', {}, LT.name), ` ${M[last.mode].icon}  ✓${last.ok}  pas ${last.pass}  ✗${last.tabu}  →  `,
+        h('b', {}, LT.name), ico(last.mode), `✓${last.ok}  pas ${last.pass}  ✗${last.tabu}  →  `,
         h('b', {}, last.net === 0 ? 'yerinde kaldı' : `${last.net > 0 ? '+' : ''}${last.net} kare`)) : null,
-      h('div', { class: 'boardwrap' }, board.svg),
+      board.el,
       V.phase === 'over'
         ? h('div', { class: 'next win', style: `--c:${V.teams[V.winner].color}` },
           h('div', { class: 'trophy' }, '🏆'), h('div', { class: 'big' }, `${V.teams[V.winner].name} kazandı!`),
@@ -243,13 +267,13 @@
         : h('div', { class: 'next', style: `--c:${T.color}` },
           h('div', { class: 'who' }, `Sıra ${T.name} takımında`),
           h('div', { class: 'big' }, `${V.describer} anlatıyor`),
-          h('div', { class: 'mchip m-' + V.mode }, `${M[V.mode].icon} ${M[V.mode].name} · ${secs(V.mode)} sn`),
+          h('div', { class: 'mchip m-' + V.mode }, ico(V.mode), `${M[V.mode].name} · ${secs(V.mode) / 60} dk`),
           h('p', { class: 'rule' }, RULE[V.mode]),
           h('p', { class: 'role' }, ROLE[V.role](V)),
           boss ? h('button', { class: 'btn go big', onclick: () => send({ a: 'start' }) }, 'Başla') : h('p', { class: 'muted center' }, `${V.describer} başlatacak`)),
       h('ol', { class: 'standings' }, V.teams.map((t, i) => h('li', { style: `--c:${t.color}`, class: i === V.turn && V.phase === 'ready' ? 'now' : null },
         h('i', { class: 'dot' }), h('b', {}, t.name), h('span', { class: 'pl' }, t.players.join(', ')), h('span', { class: 'pos' }, `${t.pos}/${Game.N}`)))),
-      h('div', { class: 'legend' }, [...new Set(V.board)].map(k => h('span', { class: 'lg m-' + k }, `${M[k].icon} ${M[k].name}`))));
+      h('div', { class: 'legend' }, [...new Set(V.board)].map(k => h('span', { class: 'lg m-' + k }, ico(k), M[k].name))));
   }
 
   function turn(C, V) {
@@ -262,30 +286,30 @@
     else card = h('div', { class: 'card opts m-' + mode },
       h('p', { class: 'hint' }, mode === 'ciz' ? 'Birini kağıda çiz' : mode === 'mime' ? 'Birini konuşmadan anlat' : 'Birini anlat'),
       V.card.map(x => h('div', { class: 'opt' }, up(x.w))));
-    const passLeft = Game.PASSES - c.pass, word = b('word', '+1 kelime', { a: 'word' });
+    const passLeft = Game.PASSES - c.pass, limited = mode === 'anlat' || mode === 'mime';
+    const word = b('word', [h('i', { class: 'bd mini' }), '➜  +1 kelime'], { a: 'word' });
     let acts = null;
-    if (lead) acts = mode === 'ciz' ? [b('next wide', 'Sonraki kart →', { a: 'next', n })] : [
+    if (lead) acts = mode === 'ciz' ? [b('pass', 'Pas', { a: 'pass', n }), b('ok', 'Doğru', { a: 'ok', n })] : [
       mode === 'limit' ? word : null,
-      b('pass', mode === 'limit' ? 'Pas −1 kelime' : `Pas (${passLeft})`, { a: 'pass', n }, mode !== 'limit' && passLeft <= 0),
+      b('pass', limited ? `Pas (${passLeft})` : 'Pas', { a: 'pass', n }, limited && passLeft <= 0),
       b('tabu', 'Tabu', { a: 'tabu', n }),
       b('ok', 'Doğru', { a: 'ok', n })];
     else if (rival && mode !== 'ciz') acts = [mode === 'limit' ? word : null, b('tabu wide', 'TABU!', { a: 'tabu', n })];
     return h('section', { class: 'turn', style: `--c:${T.color}` },
-      h('div', { class: 'thead' }, h('span', { class: 'tname' }, h('i', { class: 'dot' }), `${T.name} · ${V.describer}`), h('span', { class: 'mchip m-' + mode }, `${M[mode].icon} ${M[mode].name}`)),
+      h('div', { class: 'thead' }, h('span', { class: 'tname' }, h('i', { class: 'dot' }), `${T.name} · ${V.describer}`), h('span', { class: 'mchip m-' + mode }, ico(mode), M[mode].name)),
       h('div', { class: 'clock' }, h('div', { id: 'timer', class: 'timer' }), h('div', { class: 'bar' }, h('i', { id: 'bar' }))),
-      mode === 'ciz' ? null : h('div', { class: 'stats' },
-        h('span', { class: 's-ok' }, `✓ ${c.ok}`), h('span', {}, `pas ${c.pass}`), h('span', { class: 's-tabu' }, `✗ ${c.tabu}`),
-        mode === 'limit' ? h('span', { class: 's-words' }, `kalan kelime ${Game.WORDS - c.words}`) : null),
+      h('div', { class: 'stats' }, h('span', { class: 's-ok' }, `✓ ${c.ok}`), h('span', {}, `pas ${c.pass}`), mode === 'ciz' ? null : h('span', { class: 's-tabu' }, `✗ ${c.tabu}`)),
       card,
-      acts ? h('div', { class: 'acts' }, acts)
+      mode === 'limit' ? abacus.el : null,
+      acts ? h('div', { class: 'acts' + (mode === 'ciz' ? ' two' : '') }, acts)
         : h('p', { class: 'muted center' }, V.role === 'mate' ? 'Bildiğini yüksek sesle söyle!' : 'Çizimi izleyin; süre bitince sonuç girilecek.'));
   }
 
   function score(C, V) {
     const T = V.teams[V.turn];
     if (!(C.local || V.role === 'describer' || V.host)) return h('section', { class: 'turn', style: `--c:${T.color}` },
-      h('div', { class: 'card guess' }, h('div', { class: 'big' }, 'Süre bitti!'), h('p', {}, `${V.describer} sonucu giriyor…`)));
-    draft = draft || { ok: 0, ceza: 0 };
+      h('div', { class: 'card guess' }, h('div', { class: 'big' }, 'Süre bitti!'), h('p', {}, `${V.describer} sonucu onaylıyor…`)));
+    draft = draft || { ok: V.cur.ok, ceza: 0 };   // doğrular tur içinde sayıldı; burada düzeltilir, ceza eklenir
     const set = (k, d) => { draft[k] = Math.max(0, Math.min(99, draft[k] + d)); render(); };
     const step = (k, label) => h('div', { class: 'stepper' }, h('span', {}, label),
       h('button', { class: 'sbtn', 'aria-label': label + ' azalt', onclick: () => set(k, -1) }, '−'),
@@ -294,11 +318,11 @@
     const net = draft.ok - draft.ceza;
     return h('section', { class: 'turn', style: `--c:${T.color}` },
       h('h2', { class: 'center' }, '⏰ Süre bitti!'),
-      h('p', { class: 'center muted' }, `${T.name} kaç çizimi bildi?`),
+      h('p', { class: 'center muted' }, `${T.name} kaç çizimi bildi? Gerekirse düzelt.`),
       step('ok', 'Doğru'), step('ceza', 'Ceza'),
       h('p', { class: 'center muted small' }, 'Ceza: harf, rakam ya da sembol çizmek, konuşmak.'),
       h('p', { class: 'center' }, net === 0 ? 'Piyon yerinde kalır' : `Piyon ${net > 0 ? '+' : ''}${net} kare gider`),
-      h('button', { class: 'btn primary big', onclick: () => send({ a: 'score', ok: draft.ok, ceza: draft.ceza }) }, 'Kaydet'));
+      h('button', { class: 'btn primary big', onclick: () => send({ a: 'score', ok: draft.ok, ceza: draft.ceza }) }, 'Onayla'));
   }
 
   // ---------- süre ----------
@@ -315,17 +339,27 @@
   }
   setInterval(tick, 100);
 
-  // ---------- üst düğmeler ----------
-  $('#mute').onclick = () => { toggleMute(); render(); };
+  // ---------- üst düğmeler ve pencereler ----------
+  function soundDialog() {
+    const list = $('#soundlist');
+    list.replaceChildren(...Sound.ends.map(([k, label]) => h('div', { class: 'srow' },
+      h('label', {}, h('input', { type: 'radio', name: 'bitis', checked: Sound.end === k, onchange: () => { Sound.setEnd(k); Sound.preview(k); } }), label),
+      h('button', { class: 'mini', type: 'button', 'aria-label': label + ' dinle', onclick: () => Sound.preview(k) }, '▶ Dinle'))));
+    $('#mutebox').checked = Sound.muted;
+    $('#mutebox').onchange = e => { Sound.setMuted(e.target.checked); render(); };
+    $('#sound').showModal();
+  }
+  $('#mute').onclick = soundDialog;
   $('#helpbtn').onclick = () => $('#help').showModal();
+  for (const img of document.querySelectorAll('[data-icon]')) { const src = Board.icon(img.dataset.icon); if (src) img.src = src; else img.replaceWith(M[img.dataset.icon].icon); }
   $('#quit').onclick = () => {
     const C = here();
     if (!C) return;
     if (C.local) {
       if (!C.V) return go('home');
-      if (confirm('Oyun bitirilip lobiye dönülsün mü?')) play({ a: 'lobby' });
+      if (confirm('Oyun bitirilip takımlara dönülsün mü?')) play({ a: 'lobby' });
     } else if (C.V && C.edit) {
-      if (confirm('Oyun herkes için bitirilip lobiye dönülsün mü?')) send({ a: 'lobby' });
+      if (confirm('Oyun herkes için bitirilip takımlara dönülsün mü?')) send({ a: 'lobby' });
     } else if (confirm('Odadan çıkılsın mı?')) send({ a: 'leave' });
   };
 
@@ -335,9 +369,9 @@
     try {
       const r = await fetch('kelimeler.json', { cache: 'no-store' });
       if (r.ok) { const list = await r.json(); server = true; if (Array.isArray(list) && list.length) words = list; }
-    } catch (e) { /* dosyadan açıldı: sunucu yok */ }
+    } catch (e) { /* sunucu yok (ör. GitHub Pages): yalnızca tek telefon */ }
     if (server) connect();
-    else Words.load(u => fetch(u)).then(list => { if (list.length > words.length) { words = list; if (!here()) render(); } }).catch(() => {});
+    else Words.load(u => fetch(u)).then(got => { const list = Words.merge([got, SOMUT]); if (got.length && list.length > words.length) { words = list; if (!here()) render(); } }).catch(() => {});
     render();
   })();
 })();
