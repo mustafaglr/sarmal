@@ -73,7 +73,8 @@
           b.classList.toggle('used', i >= left);
           b.style.left = i < left ? `calc(${i} * var(--step))` : `calc(100% - ${Game.WORDS - i} * var(--step))`;
         });
-        num.replaceChildren(h('b', {}, left), h('span', {}, 'kelime hakkı kaldı'));
+        num.replaceChildren(...left ? [h('b', {}, left), h('span', {}, 'kelime hakkı kaldı')]
+          : [h('b', { class: 'done' }, 'Hak bitti'), h('span', {}, 'Son tahminler! Bildilerse Doğru, sonra üstteki Bitir.')]);
       },
     };
   })();
@@ -286,18 +287,21 @@
     else card = h('div', { class: 'card opts m-' + mode },
       h('p', { class: 'hint' }, mode === 'ciz' ? 'Birini kağıda çiz' : mode === 'mime' ? 'Birini konuşmadan anlat' : 'Birini anlat'),
       V.card.map(x => h('div', { class: 'opt' }, up(x.w))));
-    const passLeft = Game.PASSES - c.pass, limited = mode === 'anlat' || mode === 'mime';
-    const word = b('word', [h('i', { class: 'bd mini' }), '➜  +1 kelime'], { a: 'word' });
+    const passLeft = Game.PASSES - c.pass, limited = mode === 'anlat' || mode === 'mime', spent = mode === 'limit' && c.words >= Game.WORDS;
+    const word = b('word', [h('i', { class: 'bd mini' }), '➜  +1 kelime'], { a: 'word' }, spent);
+    const end = () => { if (confirm('Süre bitmeden tur bitirilsin mi?')) send({ a: 'end' }); };   // Pas/Doğru'dan uzakta ve onaylı: yanlışlıkla basılmasın
     let acts = null;
     if (lead) acts = mode === 'ciz' ? [b('pass', 'Pas', { a: 'pass', n }), b('ok', 'Doğru', { a: 'ok', n })] : [
       mode === 'limit' ? word : null,
-      b('pass', limited ? `Pas (${passLeft})` : 'Pas', { a: 'pass', n }, limited && passLeft <= 0),
+      b('pass', limited ? `Pas (${passLeft})` : 'Pas', { a: 'pass', n }, (limited && passLeft <= 0) || spent),
       b('tabu', 'Tabu', { a: 'tabu', n }),
       b('ok', 'Doğru', { a: 'ok', n })];
     else if (rival && mode !== 'ciz') acts = [mode === 'limit' ? word : null, b('tabu wide', 'TABU!', { a: 'tabu', n })];
     return h('section', { class: 'turn', style: `--c:${T.color}` },
       h('div', { class: 'thead' }, h('span', { class: 'tname' }, h('i', { class: 'dot' }), `${T.name} · ${V.describer}`), h('span', { class: 'mchip m-' + mode }, ico(mode), M[mode].name)),
-      h('div', { class: 'clock' }, h('div', { id: 'timer', class: 'timer' }), h('div', { class: 'bar' }, h('i', { id: 'bar' }))),
+      h('div', { class: 'clock' },
+        lead || V.host ? h('button', { class: 'endturn' + (spent ? ' hot' : ''), type: 'button', onclick: end }, '⏹ Bitir') : null,
+        h('div', { id: 'timer', class: 'timer' }), h('div', { class: 'bar' }, h('i', { id: 'bar' }))),
       h('div', { class: 'stats' }, h('span', { class: 's-ok' }, `✓ ${c.ok}`), h('span', {}, `pas ${c.pass}`), mode === 'ciz' ? null : h('span', { class: 's-tabu' }, `✗ ${c.tabu}`)),
       card,
       mode === 'limit' ? abacus.el : null,

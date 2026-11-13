@@ -68,19 +68,38 @@ test('anlat: doğru +1, tabu -1, pas 0; 4. pas reddedilir; süre 60 sn', () => {
   assert.equal(G.phase, 'ready');
 });
 
-test('15 kelime: 120 sn, pas bir kelime yer, 15. kelimede tur biter', () => {
+test('15 kelime: 120 sn, pas bir kelime yer; 15. kelimeden sonra tur sürer, son tahmin sayılır', () => {
   const G = mk();
   start(G, 'limit', 0);
   assert.equal(G.cur.endsAt, 120000);
   assert.equal(G.cur.card.length, 3);
   for (let i = 0; i < 5; i++) ok(G, { a: 'pass' });   // pas sınırı yok
   ok(G, { a: 'ok' });
-  for (let i = 0; i < 9; i++) ok(G, { a: 'word' });
+  for (let i = 0; i < 10; i++) ok(G, { a: 'word' });
+  assert.equal(G.cur.words, 15);
   assert.equal(G.phase, 'play');
-  ok(G, { a: 'word' });
+  no(G, { a: 'word' }); no(G, { a: 'pass' });          // hak bitti: kelime ve pas yok
+  ok(G, { a: 'ok' });                                   // son ipucundan sonra bildiler
+  ok(G, { a: 'end' });
   assert.equal(G.phase, 'ready');
-  assert.equal(G.last.ok, 1);
-  assert.equal(G.teams[0].pos, 1);
+  assert.equal(G.last.ok, 2);
+  assert.equal(G.teams[0].pos, 2);
+});
+
+test('bitir: anlatan ya da kurucu süreyi beklemeden bitirir; çizimde sonuç ekranına gider', () => {
+  const G = mk();
+  const [d, mate] = G.teams[0].players, rival = G.teams[1].players[0];
+  G.board[0] = 'anlat';
+  ok(G, { a: 'start' }, 0, { id: d.id });
+  no(G, { a: 'end' }, 0, { id: mate.id });
+  no(G, { a: 'end' }, 0, { id: rival.id });
+  ok(G, { a: 'end' }, 0, { id: rival.id, host: true });
+  assert.equal(G.phase, 'ready');
+  start(G, 'ciz');
+  ok(G, { a: 'ok' });
+  ok(G, { a: 'end' });
+  assert.equal(G.phase, 'score');
+  no(G, { a: 'end' });
 });
 
 test('çiz: doğru sayılır, pas sınırsız, tabu yok; süre bitince sonuç onaylanır ve ceza eklenir', () => {
